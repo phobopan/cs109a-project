@@ -1,0 +1,23 @@
+# Raw survey data is NOT tracked.
+# The portal CSVs contain personal data (Email, Survey entered by) and the
+# files are large and binary. data/raw/SOURCE.md documents how to reproduce
+# them exactly. The cleaned, PII-stripped panel in data/processed/ IS tracked.
+data/raw/*.xlsx
+data/*.csv
+data/interim/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# Jupyter
+*.nbconvert.ipynb
+.virtual_documents/
+Untitled*.ipynb
+
+# macOS
+.DS_Store

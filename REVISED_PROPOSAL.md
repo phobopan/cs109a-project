@@ -51,14 +51,14 @@ Scope is the 100 m protocol only.
 
 ## 3. What we learned from the data
 
-**The intuitive baseline is the wrong one.** On the modeling set, predicting the previous
-survey's value gives MAE 688; the beach's running median gives **535**; a single global median
-gives 630. The original
+**The intuitive baseline of the previous litter count is the wrong one.** On the modeling set, predicting the previous
+survey's value gives MAE 821; the beach's running median gives **602**; a single global median
+gives 699. The original
 proposal treated the previous count as the natural benchmark, which would have flattened any
 model we built. We'll still report all three, but focus only on beating the running median value with our prediction.
 
 **Most apparent predictability is between beaches, not within them.** The correlation between
-previous and current log-total is +0.701 pooled, but only **+0.283 within beach**. A model can
+previous and current log-total is +0.702 pooled, but only **+0.277 within beach**. A model can
 score well simply by learning which beaches are dirty. We will report within-beach performance
 as the honest measure of what the model adds.
 
@@ -66,19 +66,27 @@ as the honest measure of what the model adds.
 free-text notes explain why: where litter is too dense to count, surveyors measure narrow
 transects and scale up. One note describes two 1 m transects averaged and recalculated to
 100 m. The five largest surveys in the dataset are all one Swedish beach measured this way, and
-the top 1% of surveys hold **31.2%** of all items recorded. The dataset's own
+the top 1% of surveys hold **36%** of all items recorded. The dataset's own
 `Divert from the predetermined 100 metres?` flag does **not** capture this. 741 of the 759
 fractional surveys are flagged "No", so we derive our own indicator from the fractional total.
 This is the most consequential finding for modeling: the heaviest tail of the response is also
 its least reliable part.
 
-**There are two protocol changes, and only one is documented.** OSPAR expanded the litter code
-list in 2015 (sub-codes that coexist with their parents and double-count if both are summed,
-so we keep the original aggregate codes and exclude the 20 newer ones). It also expanded the
+**There are two protocol changes.** OSPAR expanded the litter code
+list in 2015 (sub-codes that coexist with their parents and double-count if both are summed;
+where both are filled the children sum exactly to the parent in 97-99% of rows, so the parent
+is authoritative and we never add a sub-code on top of it). It also expanded the
 list in **2010**, as four codes are exactly zero through 2009 and non-zero from 2010 onward, the
-same signature. This partly explains an otherwise puzzling spike in 2010–2012 medians that
+same signature. This partly explains an otherwise strange spike in 2010–2012 medians that
 survives restriction to beaches surveyed throughout. Consequence: **no train/test split may
 straddle 2010 or 2015**, and calendar year is a confounded feature.
+
+**Dropping the sub-codes outright would have been wrong.** In 416 rows the parent was left
+blank and only the newer codes were filled in, so taking the parent alone loses those items.
+The loss is concentrated: beach SE005 switched to the sub-codes in 2021, which made one survey
+read 1,574 items instead of 216,274 and created a cliff in its series that never happened. We
+use the parent where it is recorded and fall back to the sub-codes where it is not, which
+recovers 386,000 items, about 9% of the panel.
 
 **Missingness is structural.** The litter counts are essentially complete (max 0.09% missing).
 What is missing is free text and the 1 km coordinate columns (~45%), the latter because not
@@ -103,7 +111,7 @@ the beach's expanding median to date; days since the previous survey; season (`P
 a separate out-of-window flag); country and region; parsed latitude and longitude; and the
 derived transect-estimate indicator.
 
-**Our Target is** `log1p(total)`. Raw totals have skew 34.7; the log transform brings it to -0.13.
+**Our Target is** `log1p(total)`. Raw totals have skew 30.1; the log transform brings it to -0.10.
 
 **Models:** the three baselines above, then multiple linear regression on the log target, then
 Random Forest, as proposed. Linear regression will need standardized features given that
@@ -115,8 +123,8 @@ Primary metric MAE, chosen over RMSE because of the unreliable upper tail; R-squ
 report MAE pooled and within-beach, and break errors down by beach, season and whether the
 survey was transect-estimated.
 
-**Limitations, revised.** The original limitations stand: monitored beaches are selected rather
+**Revised limitations.** The original limitations stand: monitored beaches are selected rather
 than sampled, so results apply to the OSPAR network and not the Northeast Atlantic generally;
 repeated observations create dependence; and we identify predictive associations, not causes. We
-added two, first that protocol changes did occur in 2010 and 2015. And the response
+added two, the first being that protocol changes did occur in 2010 and 2015. And the response
 is not measured consistently across its range, since its largest values are extrapolations.

@@ -48,6 +48,8 @@ The survey portal went down on Nov 1, but OSPAR publishes the same monitoring da
 
 #### Confirmed data issues (verified across all nine ODIMS years)
 
+0. **Corrected Nov 9 — the sub-code rule was incomplete.** Excluding the 20 sub-codes outright loses every row where the parent was left blank and only the newer codes were used: 416 rows. `SE005` switched to the sub-codes in 2021, so one survey read 1,574 items instead of 216,274 and its series showed a collapse that never happened. The loader now uses the parent where recorded and falls back to the sub-codes where not, recovering ~386,000 items (~9% of the panel). Baselines moved to 602 / 699 / 821; the ordering is unchanged.
+
 1. **Columns double-count.** Old aggregate codes and newer sub-codes coexist for the same litter *in every year* — this is a fixed feature of the schema, not drift across releases. In 2023, `Plastic: Food [6]` sums to 3,530 while `Food_plastic [610]` + `Food_eps [620]` sums to 3,463, with 342 rows populating both. The working convention used in testing: keep the 116 main count columns and exclude the 20 newer sub-codes. The same pattern holds for Cups, Fishboxes, Plastic_small, Plastic_large, String and cotton buds. **Summing all numeric columns roughly doubles those categories.** Neither convention is complete alone — about 15 rows carry only the old code, others only the sub-codes. Pick one, document the choice.
 2. **`Period` = −1** on 25 rows, all August 2023, one per beach. A sentinel for missing, not a period number — do not let it into a model as a number.
 3. **Two non-count columns.** `Survey: Pellets [998]` is Yes/No text and `Survey: Remarks [999]` is free text; exclude both from sums. Worth reading the remarks: several note records revised post hoc during national QC in March 2024, a data-provenance point a TF may probe.
@@ -95,15 +97,15 @@ These were run on 3,641 beach-survey transitions across 207 beaches. They are pr
 
 **1. Survey spacing does not drive the count.** On the full 22.8-year panel (5,633 transitions, 239 beaches): **−0.001 pooled, +0.031 within beach**. Gaps are regular anyway (median 92 days, IQR 82–110; the long tail comes from beaches that skip a year, max 1,130). Keep `days since previous survey` as a feature — it is cheap and the proposal commits to it — but expect it to carry almost no weight, and say so rather than letting a reader assume it matters.
 
-**2. Most of the apparent predictability is cross-sectional, not temporal.** Previous count vs. next count, on logs, modeling set: **+0.701 pooled but only +0.283 within beach** (full panel: +0.713 / +0.280). (The within-beach figure rose from +0.218 on the nine-year panel — more history, better estimate.) The pooled figure mostly says some beaches are consistently dirtier than others. A model given beach identity will post a respectable R² while having learned almost nothing about *change over time*. Report both, and treat the within-beach number as the honest measure of what the lag features add.
+**2. Most of the apparent predictability is cross-sectional, not temporal.** Previous count vs. next count, on logs, modeling set: **+0.702 pooled but only +0.277 within beach**. (The within-beach figure rose from +0.218 on the nine-year panel — more history, better estimate.) The pooled figure mostly says some beaches are consistently dirtier than others. A model given beach identity will post a respectable R² while having learned almost nothing about *change over time*. Report both, and treat the within-beach number as the honest measure of what the lag features add.
 
 **3. The naive previous-value baseline is the worst of the three.** Mean absolute error on the stacked panel:
 
 | Baseline | MAE (full panel) |
 |---|---|
-| Beach historical median | **535** |
-| Global median | 630 |
-| Previous survey's count | 688 |
+| Beach historical median | **602** |
+| Global median | 699 |
+| Previous survey's count | 821 |
 
 Single surveys are volatile, so last-quarter's count is a noisier predictor than the beach's own median. **Make the beach historical median the primary benchmark**, not the previous value — the proposal offers both, and this says which one a model actually has to beat. Expect beating it to be harder than it sounds.
 
@@ -164,7 +166,7 @@ Goal: motivated EDA that *refines the project goals*, a baseline model as a benc
 - **A — features:** build `src/features.py`. Lagged target (previous count, mean of previous *k*), lagged composition shares, days since previous survey, **OSPAR period (1–4)** and month/season, beach ID and country/region encodings, trailing beach-level statistics computed **from past surveys only**. Every feature documented with the timestamp of the information it uses.
 - **B — EDA:** target distribution by beach, country, season, and year; trend over time; autocorrelation of counts within a beach — the preliminary answer is +0.22 within beach against +0.72 pooled (§4.1), so decompose between- and within-beach variance explicitly rather than reporting a single pooled number; seasonality; variance across beaches; relationships between candidate features and the target. Each figure must answer a question, not just exist — the spec asks for *well-motivated* EDA whose findings refine the goals.
 - **C — pipeline + baselines:** 
-  - Baselines, in the order they actually perform (see §4.1): **(i) beach historical median — the one to beat (MAE 535), (ii) global median (630), (iii) previous survey's count (688)** (modeling set: 197 beaches with >=8 surveys, 5,471 transitions). Report all three; the previous-value baseline is worth keeping precisely because it is the intuitive choice and it loses.
+  - Baselines, in the order they actually perform (see §4.1): **(i) beach historical median — the one to beat (MAE 602), (ii) global median (699), (iii) previous survey's count (821)** (modeling set: 197 beaches with >=8 surveys, 5,471 transitions). Report all three; the previous-value baseline is worth keeping precisely because it is the intuitive choice and it loses.
   - Time-aware CV harness: expanding-window splits by date, with the test fold always later than train.
   - Metrics: **MAE primary, R² secondary**, per the proposal; add RMSE and a baseline-relative skill score. If modeling `log1p(count)`, report errors back on the count scale.
   - A `sklearn` `Pipeline` with imputation → scaling → model, so preprocessing is fit on train folds only (this is itself a leakage guard).

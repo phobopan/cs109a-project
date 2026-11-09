@@ -43,21 +43,47 @@ PROCESSED_PATH = os.path.join(DATA_DIR, "processed", "panel.csv.gz")
 # Dropped on load: we have no use for them and they are personal data.
 PII_COLUMNS = ["Email", "Survey entered by"]
 
-# Litter codes introduced in 2015 that subdivide an older code. They sum to
-# exactly zero before 2015 and coexist with their parents afterwards, so
-# including them alongside the parents double-counts. Excluded from the total.
-SUBCODE_COLUMNS = [
-    "Plastic: Food_plastic [610]", "Plastic: Food_eps [620]",
-    "Plastic: Cups_plastic [211]", "Plastic: Cups_eps [212]",
-    "Plastic: Fishboxes_plastic [341]", "Plastic: Fishboxes_eps [342]",
-    "Plastic: Plastic_s [1171]", "Plastic: Eps_s [1172]",
-    "Plastic: Plastic_m [461]", "Plastic: Eps_m [462]",
-    "Plastic: Plastic_l [471]", "Plastic: Eps_l [472]",
-    "Plastic: String_cord [321]", "Plastic: Dolly_rope [322]",
-    "Plastic: Tangled_string [331]", "Plastic: Tangled_dolly_rope [332]",
-    "San: Buds_plastic [981]", "San: Buds_cardboard [982]",
-    "Plastic: Biofilm [481]", "Glass: Jars [931]",
-]
+# Litter codes that subdivide an older code, as parent -> children. OSPAR
+# added most of these in 2015 (they sum to exactly zero before then) and two
+# more in 2018. Parent and children are both populated in the same rows, so
+# summing everything double-counts: in 97-99% of such rows the children sum
+# exactly to the parent, confirming they are a breakdown and not new items.
+#
+# The parent is therefore authoritative WHERE IT IS RECORDED. In 416 rows it
+# is not: the surveyor used only the newer codes, and taking the parent alone
+# would silently drop those items. Beach SE005 switched to the sub-codes in
+# 2021, which made one survey read 1,574 instead of 206,730. litter_total()
+# falls back to the children in exactly those rows.
+#
+# Two groups are partial rather than exhaustive subdivisions -- Biofilm agrees
+# with Plastic: Other in only 4% of shared rows, Glass: Jars with Glass: Other
+# in 61% -- but they are tiny (2,518 and 655 items lifetime) so the rule costs
+# nothing either way.
+SUBCODE_PARENTS = {
+    "Plastic: Food [6]": [
+        "Plastic: Food_plastic [610]", "Plastic: Food_eps [620]"],
+    "Plastic: Cups [21]": [
+        "Plastic: Cups_plastic [211]", "Plastic: Cups_eps [212]"],
+    "Plastic: Fishboxes [34]": [
+        "Plastic: Fishboxes_plastic [341]", "Plastic: Fishboxes_eps [342]"],
+    "Plastic: Plastic_small [117]": [
+        "Plastic: Plastic_s [1171]", "Plastic: Eps_s [1172]"],
+    "Plastic: Plastic_large [46]": [
+        "Plastic: Plastic_m [461]", "Plastic: Eps_m [462]"],
+    "Plastic: Plastic_vlarge [47]": [
+        "Plastic: Plastic_l [471]", "Plastic: Eps_l [472]"],
+    "Plastic: String [32]": [
+        "Plastic: String_cord [321]", "Plastic: Dolly_rope [322]"],
+    "Plastic: Tangled [33]": [
+        "Plastic: Tangled_string [331]", "Plastic: Tangled_dolly_rope [332]"],
+    "San: Buds [98]": [
+        "San: Buds_plastic [981]", "San: Buds_cardboard [982]"],
+    "Plastic: Other [48]": ["Plastic: Biofilm [481]"],
+    "Glass: Other [93]": ["Glass: Jars [931]"],
+}
+
+# Flat list of the children, excluded from the parent-convention columns.
+SUBCODE_COLUMNS = [c for children in SUBCODE_PARENTS.values() for c in children]
 
 # Free-text fields where a surveyor sometimes left contact details. At least
 # one Divert specify note ends with a name and work email address, so emails
@@ -87,6 +113,25 @@ def count_columns(df: pd.DataFrame) -> list[str]:
         and not str(c).startswith(NON_COUNT_PREFIXES)
         and str(c) not in SUBCODE_COLUMNS
     ]
+
+
+def litter_total(df: pd.DataFrame) -> pd.Series:
+    """Total litter items per survey, on one convention for the whole panel.
+
+    Counts the original aggregate codes, which exist across all 22 years, and
+    never adds a sub-code on top of its parent. Where a parent was left blank
+    but its sub-codes were filled in, the sub-codes stand in for it; see
+    :data:`SUBCODE_PARENTS` for why that fallback matters.
+    """
+    total = df[count_columns(df)].sum(axis=1)
+    for parent, children in SUBCODE_PARENTS.items():
+        kids = [c for c in children if c in df.columns]
+        if parent not in df.columns or not kids:
+            continue
+        parent_values = df[parent].fillna(0)
+        child_values = df[kids].sum(axis=1)
+        total = total + child_values.where(parent_values == 0, 0)
+    return total
 
 
 def redact_emails(df: pd.DataFrame) -> pd.DataFrame:
@@ -218,7 +263,7 @@ def load_panel(data_dir: str = DATA_DIR, min_surveys: int = 0,
     # derived column added below.
     df = df.copy()
 
-    df["total"] = df[counts].sum(axis=1)
+    df["total"] = litter_total(df)
     df["log_total"] = np.log1p(df["total"])
 
     # Period -1 marks a survey taken outside the four standard windows
